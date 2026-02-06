@@ -1,0 +1,78 @@
+name: Build Arkari Windows (O-LLVM)
+
+on:
+  workflow_dispatch: # 手动触发
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'main'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 360 # 6小时超时限制
+
+    steps:
+      - name: Checkout Arkari Source
+        uses: actions/checkout@v4
+        with:
+          repository: KomiMoe/Arkari
+          ref: ${{ github.event.inputs.branch }}
+          path: arkari-src
+          fetch-depth: 1
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install Ninja & Sccache
+        run: |
+          choco install ninja sccache -y
+
+      - name: Configure CMake
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          mkdir build
+          cd build
+          
+          cmake -G "Ninja" ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DLLVM_ENABLE_PROJECTS="clang" ^
+            -DLLVM_TARGETS_TO_BUILD="ARM;AArch64;X86" ^
+            -DLLVM_INCLUDE_TESTS=OFF ^
+            -DLLVM_INCLUDE_EXAMPLES=OFF ^
+            -DLLVM_INCLUDE_BENCHMARKS=OFF ^
+            -DLLVM_ENABLE_NEW_PASS_MANAGER=OFF ^
+            -DCMAKE_C_COMPILER=cl ^
+            -DCMAKE_CXX_COMPILER=cl ^
+            ../arkari-src/llvm
+
+      - name: Build Clang
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cd build
+          ninja -j%NUMBER_OF_PROCESSORS% clang llvm-strip
+
+      - name: Package Artifacts
+        shell: cmd
+        run: |
+          mkdir release_bin
+          copy build\bin\clang.exe release_bin\
+          copy build\bin\clang++.exe release_bin\
+          copy build\bin\clang-cl.exe release_bin\
+          copy build\bin\llvm-strip.exe release_bin\
+          
+          REM Arkari 只有 Clang 是核心，其他工具通常不需要混淆
+          7z a -t7z -mx=9 arkari-windows-x64.7z release_bin\*
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: win-build-${{ github.run_number }}
+          name: Arkari Windows Build ${{ github.run_number }}
+          files: arkari-windows-x64.7z
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
