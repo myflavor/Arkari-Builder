@@ -43,7 +43,6 @@ jobs:
             -DLLVM_INCLUDE_TESTS=OFF ^
             -DLLVM_INCLUDE_EXAMPLES=OFF ^
             -DLLVM_INCLUDE_BENCHMARKS=OFF ^
-            -DLLVM_ENABLE_NEW_PASS_MANAGER=OFF ^
             -DCMAKE_C_COMPILER=cl ^
             -DCMAKE_CXX_COMPILER=cl ^
             ../arkari-src/llvm
