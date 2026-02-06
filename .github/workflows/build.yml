@@ -57,20 +57,16 @@ jobs:
       - name: Package Artifacts
         shell: cmd
         run: |
-          mkdir release_bin
-          copy build\bin\clang.exe release_bin\
-          copy build\bin\clang++.exe release_bin\
-          copy build\bin\clang-cl.exe release_bin\
-          copy build\bin\llvm-strip.exe release_bin\
-          
+          mkdir arkari
+          copy build\bin arkari\
           REM Arkari 只有 Clang 是核心，其他工具通常不需要混淆
-          7z a -t7z -mx=9 arkari-windows-x64.7z release_bin\*
+          7z a -t7z -mx=9 arkari-windows-x64.7z arkari\*
 
       - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: win-build-${{ github.run_number }}
-          name: Arkari Windows Build ${{ github.run_number }}
+          tag_name: ${{ github.event.inputs.branch }}
+          name: ${{ github.event.inputs.branch }}-${{ github.run_number }}
           files: arkari-windows-x64.7z
           draft: false
         env:
