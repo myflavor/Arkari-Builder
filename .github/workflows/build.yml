@@ -1,26 +1,41 @@
 name: Build Arkari Windows (O-LLVM)
 
+permissions:
+  contents: write
+
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch:
     inputs:
-      branch:
-        description: 'Branch to build'
+      ref:
+        description: 'Commit Hash, Tag or Branch'
         required: true
-        default: 'llvm-20.x'
+        default: 'main'
 
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 360 # 6小时超时限制
+    timeout-minutes: 360
+
+    env:
+      BUILD_TYPE: Release
 
     steps:
       - name: Checkout Arkari Source
         uses: actions/checkout@v4
         with:
           repository: KomiMoe/Arkari
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.event.inputs.ref }}
           path: arkari-src
           fetch-depth: 1
+
+      - name: Get Short SHA
+        id: get_sha
+        shell: pwsh
+        run: |
+          pushd arkari-src
+          $sha = git rev-parse --short HEAD
+          echo "SHORT_SHA=$sha" >> $env:GITHUB_ENV
+          popd
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -33,40 +48,48 @@ jobs:
         shell: cmd
         run: |
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          mkdir build
-          cd build
           
-          cmake -G "Ninja" ^
-            -DCMAKE_BUILD_TYPE=Release ^
-            -DLLVM_ENABLE_PROJECTS="clang" ^
+          cmake -Bbuild -G Ninja ^
+            -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ^
+            -DLLVM_ENABLE_PROJECTS="clang;lld" ^
             -DLLVM_TARGETS_TO_BUILD="ARM;AArch64;X86" ^
             -DLLVM_INCLUDE_TESTS=OFF ^
             -DLLVM_INCLUDE_EXAMPLES=OFF ^
             -DLLVM_INCLUDE_BENCHMARKS=OFF ^
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=OFF ^
+            -DLLVM_ENABLE_LIBXML2=OFF ^
+            -DLLVM_ENABLE_ZLIB=OFF ^
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ^
+            -DCMAKE_INSTALL_PREFIX=install ^
             -DCMAKE_C_COMPILER=cl ^
             -DCMAKE_CXX_COMPILER=cl ^
-            ../arkari-src/llvm
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache ^
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
+            arkari-src/llvm
 
-      - name: Build Clang
+      - name: Build & Install
         shell: cmd
         run: |
           call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          cd build
-          ninja -j%NUMBER_OF_PROCESSORS% clang llvm-strip
+          REM 执行 install target 会自动把需要的文件提取到 install 目录
+          cmake --build build --config %BUILD_TYPE% --target install --verbose -j%NUMBER_OF_PROCESSORS%
 
       - name: Package Artifacts
-        shell: cmd
+        shell: pwsh
         run: |
-          mkdir arkari
-          copy build\bin arkari
-          7z a -t7z -mx=9 arkari-windows-x64.7z arkari\*
+          $ZipName = "arkari-windows-${{ env.SHORT_SHA }}.7z"
+          echo "ZIP_NAME=$ZipName" >> $env:GITHUB_ENV
+          7z a -t7z -mmt -mf -mhc -mhcf -m0=LZMA2 -mx=9 "$ZipName" `
+            install/bin/* `
+            arkari-src/clang/lib/Headers
 
       - name: Upload Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.branch }}
-          name: ${{ github.event.inputs.branch }}
-          files: arkari-windows-x64.7z
+          tag_name: ${{ env.SHORT_SHA }}
+          name: "Arkari - ${{ env.SHORT_SHA }}"
+          files: ${{ env.ZIP_NAME }}
           draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
