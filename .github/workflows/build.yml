@@ -58,8 +58,7 @@ jobs:
         shell: cmd
         run: |
           mkdir arkari
-          copy build\bin arkari\
-          REM Arkari 只有 Clang 是核心，其他工具通常不需要混淆
+          copy build\bin arkari
           7z a -t7z -mx=9 arkari-windows-x64.7z arkari\*
 
       - name: Upload Release
